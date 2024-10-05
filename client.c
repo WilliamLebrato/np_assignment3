@@ -68,37 +68,67 @@ int main(int argc, char *argv[]){
 
         break;  // Successfully connected
     }
-
     freeaddrinfo(servinfo);
 
-    char message[20];
-    snprintf(message, sizeof(message), "NICK %s\n", nickname);
+    if(1)   // PROTOCL VERSION SECTION
 
-    if (send(sockfd, message, strlen(message), 0) == -1) {
-        perror("send");
-        close(sockfd);
-        return -1;
+        {
+        memset(buf, 0, sizeof buf); // Clear the buffer
+        int numbytes;
+        if ((numbytes = recv(sockfd, buf, BUFFER_SIZE - 1, 0)) == -1) {
+            perror("recv");
+            close(sockfd); // Ensure the socket is closed on error
+            return -1; // Return with error status
+        }
+        printf("Received: %s\n", buf);
+        if (strstr(buf, "HELLO 1") == NULL ) {
+            printf("ERROR\n");  // Match expected output
+            close(sockfd);      // Close the socket immediately
+            return 1;           // Exit the client to avoid timeout
+        }
+        char message[20];
+        snprintf(message, sizeof(message), "NICK %s\n", nickname);
+        if (send(sockfd, message, strlen(message), 0) == -1) {
+            perror("send");
+            close(sockfd);
+            return -1;
+        }
+        }
+
+
+    if (1) // NICKNAME SECTION
+    {
+        memset(buf, 0, sizeof buf);
+        if (recv(sockfd, buf, BUFFER_SIZE - 1, 0) == -1) {
+            perror("recv");
+            close(sockfd);
+            return -1;
+        }
+
+        printf("Nickname response: %s\n", buf);
+        // Check if the server accepted the nickname
+        if (strstr(buf, "OK") != NULL) 
+        {
+            printf("Server accepted nickname: %s\n", nickname);    
+        }
+        else if (strstr(buf, "ERROR") != NULL) 
+        {
+            printf("ERROR: Nickname not accepted by the server\n");
+            close(sockfd);
+            return -1;
+        }
+        else
+        {
+            printf("Unknown Response from server: %s\n", buf);
+            close(sockfd);
+            return -1;
+        }
     }
 
-    memset(buf, 0, sizeof buf);
-    if (recv(sockfd, buf, BUFFER_SIZE - 1, 0) == -1) {
-        perror("recv");
-        close(sockfd);
-        return -1;
-    }
+    while(1) // Main Loop
+    {
 
-    // Check if the server accepted the nickname
-    if (strstr(buf, "OK") == NULL) {
-        printf("ERROR: Nickname not accepted by the server\n");
-        close(sockfd);
-        return -1;
     }
     
-
-
-
-
     return 0;
-
-
 }
