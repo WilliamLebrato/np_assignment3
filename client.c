@@ -6,7 +6,8 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <errno.h>
-
+#include <fcntl.h>
+#include <sys/select.h>
 
 #define BUFFER_SIZE 1024
 
@@ -86,6 +87,7 @@ int main(int argc, char *argv[]){
             close(sockfd);      // Close the socket immediately
             return 1;           // Exit the client to avoid timeout
         }
+        printf("Protocol Supported\n");
         char message[20];
         snprintf(message, sizeof(message), "NICK %s\n", nickname);
         if (send(sockfd, message, strlen(message), 0) == -1) {
@@ -125,10 +127,92 @@ int main(int argc, char *argv[]){
         }
     }
 
+    if (fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK) == -1) {
+        perror("fcntl");
+        close(sockfd);
+        return -1;
+    }
+
+    fd_set read_fds;
+    int max_fd;
+
     while(1) // Main Loop
     {
+        FD_ZERO(&read_fds);                 // Clear the fd_set (initialize it)
+        FD_SET(STDIN_FILENO, &read_fds);    // Add stdin to the fd_set
+        FD_SET(sockfd, &read_fds);          // Add the socket to the fd_set
 
-    }
+        max_fd = (sockfd > STDIN_FILENO) ? sockfd : STDIN_FILENO;
     
+
+        int activity = select(max_fd + 1, &read_fds, NULL, NULL, NULL);
+
+        if (activity < 0)
+        {
+            perror("select");
+            continue;
+        }
+
+        if (FD_ISSET(STDIN_FILENO, &read_fds)) // SEND DATA
+        {
+            memset(buf, 0, sizeof buf); // Clear the buffer
+            int numbytes;
+            if ((numbytes = read(STDIN_FILENO, buf, BUFFER_SIZE - 1)) == -1) {
+                perror("read");
+                continue;
+            }
+
+            if (numbytes == 0) // Empty input
+            {
+                printf("EOF\n");
+                continue;
+            }
+
+            // Create a new buffer to hold "MSG " + message
+            char message_buffer[BUFFER_SIZE + 5]; 
+            snprintf(message_buffer, sizeof(message_buffer), "MSG %s", buf);  
+
+            if (send(sockfd, message_buffer, strlen(message_buffer), 0) == -1) {
+                perror("send");
+                continue;
+            }
+
+        }
+
+        if (FD_ISSET(sockfd, &read_fds)) // RECIEVE DATA
+        {
+            memset(buf, 0, sizeof buf); // Clear the buffer
+            int numbytes_recv;
+
+            if ((numbytes_recv = recv(sockfd, buf, BUFFER_SIZE - 1, 0)) == -1) {
+                perror("recv");
+                close(sockfd);
+                break; // Exit the loop to terminate the client
+            }
+
+            if (numbytes_recv == 0) // Server closed connection
+            {
+                printf("Server closed the connection.\n");
+                close(sockfd);
+                break;
+            }
+
+            buf[numbytes_recv] = '\0'; // Ensure null-termination
+
+            // Process the received message
+            if (strncmp(buf, "MSG ", 4) == 0) {
+                // Expected format: MSG <nick> <text>
+                printf("%s", buf); // Already includes newline
+            }
+            else if (strncmp(buf, "ERROR", 5) == 0 || strncmp(buf, "ERR", 3) == 0) {
+                // Print error messages
+                printf("%s", buf);
+            }
+            else {
+                // Handle other possible messages or ignore
+                printf("Unknown message from server: %s\n", buf);
+            }
+        }
+    }
     return 0;
 }

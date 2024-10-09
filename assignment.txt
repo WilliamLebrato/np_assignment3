@@ -1,0 +1,30 @@
+(PLEASE NOTE MAY CHANGE during September)
+Introduction
+
+In this assignment, you are to implement a command-line chat system, based on TCP. 
+
+The goal is that you get experience working with multiple communication channels at the same time. 
+
+Your solution needs to support DNS names, and those can be resolved to both IPv4 and IPv6. 
+TCP Chat Client
+
+Implement a simple chat-client. Must be able to set IP:PORT and nickname at runtime, e.g. using command-line arguments. See the protocol description below. There are two testing servers; 18.219.51.6:4711 and 13.53.76.30:4711 (depending on AWS). For user-input, you should read non-blocking without an echo. I.E. you should be able to print any messages coming from the server, while the user is typing their message. Consider using select to read both STDIN and the socket. 
+TCP Chat Server
+
+Implement a chat-server that is compatible with the chat-client. It must be able to handle multiple users (sockets) simultaneously. 
+Chat Protocol
+Client 	Direction 	Server
+Connect() 	--> 	
+	<-- 	Hello <VERSION>
+NICK <nick> 	--> 	
+	<-- 	OK/ERR <text>
+MSG <text> 	--> 	
+	<-- 	MSG nick <text>/ERROR <text>
+
+Nicknames are limited to 12 characters (A-Za-z0-9\_) and messages are limited to 255 characters. A newline, '\n' follows each message. <VERSION> is 1.0 in this example 
+
+On the client, read command line arguments (REQUIREMENT).  Check all inputs and the NICK syntax in particular (reqular_expressions). If anything is wrong, print error exit, do not contact the server. On the server, do not let the client into the 'chat' until a valid NICK has been received (use regular expressions to test).  
+
+As the server echos back whatever you send it, if properly formatted, then you should not print its reply (unless an error), as your client already has that printed. 
+
+ 
