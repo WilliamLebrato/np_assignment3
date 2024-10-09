@@ -11,6 +11,7 @@
 
 #define BUFFER_SIZE 300
 
+// ./cchat 13.53.76.30:4711 William
 
 
 
