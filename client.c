@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <sys/select.h>
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 300
 
 
 
@@ -195,8 +195,6 @@ int main(int argc, char *argv[]){
                 return -1;
             }
 
-            buf[numbytes_recv] = '\0'; // Ensure null-termination
-
             if (strncmp(buf, "MSG ", 4) == 0) {
                 char *msg_start = buf + 4; 
 
@@ -204,11 +202,16 @@ int main(int argc, char *argv[]){
                 if (nickname_end != NULL) {
                     *nickname_end = '\0'; 
 
-                    printf("%s: ", msg_start);
+                    char *sender_nick = msg_start;
+                    char *message_text = nickname_end + 1; 
 
-                    printf("%s\n", nickname_end + 1); 
+                    // Compare sender's nickname with your own
+                    if (strcmp(sender_nick, nickname) != 0) {
+                        printf("%s: %s\n", sender_nick, message_text); 
+                    }
+                    // Else, it's your own message echoed back; do not print
                 } else {
-                    printf("%s\n", buf);
+                    printf("Malformed message from server: %s\n", buf);
                 }
             }
             else if (strncmp(buf, "ERROR", 5) == 0 || strncmp(buf, "ERR", 3) == 0) {
@@ -218,7 +221,6 @@ int main(int argc, char *argv[]){
                 printf("Unknown message from server: %s\n", buf);
             }
         }
-
     }
     return 0;
 }
