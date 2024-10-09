@@ -176,43 +176,49 @@ int main(int argc, char *argv[]){
                 perror("send");
                 continue;
             }
-
         }
 
-        if (FD_ISSET(sockfd, &read_fds)) // RECIEVE DATA
+        if (FD_ISSET(sockfd, &read_fds)) // RECEIVE DATA
         {
             memset(buf, 0, sizeof buf); // Clear the buffer
             int numbytes_recv;
 
             if ((numbytes_recv = recv(sockfd, buf, BUFFER_SIZE - 1, 0)) == -1) {
                 perror("recv");
-                close(sockfd);
-                break; // Exit the loop to terminate the client
+                break;
             }
 
             if (numbytes_recv == 0) // Server closed connection
             {
                 printf("Server closed the connection.\n");
                 close(sockfd);
-                break;
+                return -1;
             }
 
             buf[numbytes_recv] = '\0'; // Ensure null-termination
 
-            // Process the received message
             if (strncmp(buf, "MSG ", 4) == 0) {
-                // Expected format: MSG <nick> <text>
-                printf("%s", buf); // Already includes newline
+                char *msg_start = buf + 4; 
+
+                char *nickname_end = strchr(msg_start, ' ');
+                if (nickname_end != NULL) {
+                    *nickname_end = '\0'; 
+
+                    printf("%s: ", msg_start);
+
+                    printf("%s\n", nickname_end + 1); 
+                } else {
+                    printf("%s\n", buf);
+                }
             }
             else if (strncmp(buf, "ERROR", 5) == 0 || strncmp(buf, "ERR", 3) == 0) {
-                // Print error messages
                 printf("%s", buf);
             }
             else {
-                // Handle other possible messages or ignore
                 printf("Unknown message from server: %s\n", buf);
             }
         }
+
     }
     return 0;
 }
