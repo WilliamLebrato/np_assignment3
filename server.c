@@ -151,18 +151,54 @@ struct ReceivedMessage receive_message(fd_set *master_fds, fd_set *read_fds, int
     return result;
 }
 
-
+const char* get_client_nickname(int client_socket) {
+    // Loop through all clients to find the one with the matching socket
+    for (int i = 0; i < SOMAXCONN; i++) {
+        if (clients[i].is_active && clients[i].server_socket == client_socket) {
+            return clients[i].nickname;  // Return the nickname if found
+        }
+    }
+    return NULL;  // Return NULL if no matching client is found
+}
 
 void broadcast(int sender_server_socket, const char *message) {
+    // Check if the message starts with "MSG "
+    if (strncmp(message, "MSG ", 4) != 0) {
+        // Send an error message to the sender
+        const char* error_message = "ERROR Invalid message format\n";
+        if (send(sender_server_socket, error_message, strlen(error_message), 0) == -1) {
+            perror("send failed");
+            remove_client(sender_server_socket);
+        }
+        return;  // Stop processing since this is an invalid message
+    }
+
+    // Extract the actual message (skip "MSG " which is 4 characters)
+    const char* text_message = message + 4;
+
+    // Get the sender's nickname
+    const char* sender_nickname = get_client_nickname(sender_server_socket);
+    if (sender_nickname == NULL) {
+        printf("Sender nickname not found for socket: %d\n", sender_server_socket);
+        return;  // No nickname found, abort broadcast
+    }
+
+    // Create a buffer to hold the formatted message: MSG <nick> <text_message>
+    char broadcast_message[BUFFER_SIZE + NICKNAME_MAX_LEN + 6];  // Extra space for "MSG " and formatting
+    snprintf(broadcast_message, sizeof(broadcast_message), "MSG %s %s", sender_nickname, text_message);
+
+    // Broadcast the message to all clients except the sender
     for (int i = 0; i < SOMAXCONN; i++) {
         if (clients[i].is_active && clients[i].server_socket != sender_server_socket) {
-            if (send(clients[i].server_socket, message, strlen(message), 0) == -1) {
+            if (send(clients[i].server_socket, broadcast_message, strlen(broadcast_message), 0) == -1) {
                 perror("send failed");
                 remove_client(clients[i].server_socket);
             }
         }
     }
 }
+
+
 
 
 
@@ -281,15 +317,12 @@ int main(int argc, char *argv[]) {
         {
             struct ReceivedMessage received_message = receive_message(&master_fds, &read_fds, fdmax, server_socket, buffer);
             client_socket = received_message.sender_socket;
-            bytes_received = received_message.bytes_received;
 
-            if (bytes_received == -1) {
+            if (received_message.bytes_received == -1) {
                 continue;
             }
 
-            if (strncmp(buffer, "MSG ", 4) == 0) {
-                broadcast(client_socket, buffer);
-            } 
+            broadcast(client_socket, buffer);
         }
     }
 
