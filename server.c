@@ -8,13 +8,19 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define buff_size 270
+#define BUFFER_SIZE 269
+#define NICKNAME_MAX_LEN 12
+
 
 struct Client {
     int server_socket;
-    char ip_address[INET6_ADDRSTRLEN];
     char nickname[13];
     int is_active;
+};
+
+struct RecievedMessage {
+    int sender_socket;
+    int bytes_received;
 };
 
 struct Client clients[SOMAXCONN];
@@ -26,12 +32,13 @@ void initialize_clients() {
     }
 }
 
+
 // Add a client to the first available slot and store the nickname
-int add_client(int client_server_socket, const char *nickname) {
+int add_client(int client_socket, const char *nickname) {
     for (int i = 0; i < SOMAXCONN; i++) {
         if (clients[i].is_active == 0) {  // Find the first inactive slot
             clients[i].is_active = 1;     // Mark the client as active
-            clients[i].server_socket = client_server_socket;
+            clients[i].server_socket = client_socket;
 
             // Store the client's nickname
             strncpy(clients[i].nickname, nickname, sizeof(clients[i].nickname) - 1);
@@ -43,17 +50,104 @@ int add_client(int client_server_socket, const char *nickname) {
     return 0;  // No available slot
 }
 
-void remove_client(int client_server_socket) {
+
+// Function to validate the client's nickname when they first connect
+int validate_client(int client_socket) {
+    char buf[BUFFER_SIZE];
+    int numbytes;
+
+    // Step 1: Receive the nickname from the client
+    memset(buf, 0, sizeof(buf));
+    if ((numbytes = recv(client_socket, buf, sizeof(buf) - 1, 0)) <= 0) {
+        if (numbytes == 0) {
+            printf("Client disconnected before sending a nickname.\n");
+        } else {
+            perror("recv");
+        }
+        return -1;
+    }
+
+    if (strncmp(buf, "NICK ", 5) != 0) {
+        printf("Invalid protocol message from client. Expected 'NICK <nickname>'.\n");
+        send(client_socket, "ERROR Invalid nickname format\n", 29, 0);
+        return -1; // Invalid message format
+    }
+
+    char *nickname = buf + 5; 
+    nickname[strcspn(nickname, "\n")] = '\0'; 
+
+    if (strlen(nickname) > NICKNAME_MAX_LEN || strspn(nickname, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != strlen(nickname)) {
+        printf("Invalid nickname received: %s\n", nickname);
+        send(client_socket, "ERROR Invalid nickname\n", 23, 0);
+        return -1; 
+    }
+
+    send(client_socket, "OK\n", 3, 0);
+    printf("Client nickname validated: %s\n", nickname);
+
+    add_client(client_socket, nickname);  
+    return 0;
+}
+
+
+void remove_client(int client_socket) {
     for (int i = 0; i < SOMAXCONN; i++) {
-        if (clients[i].server_socket == client_server_socket && clients[i].is_active) {
+        if (clients[i].server_socket == client_socket && clients[i].is_active) {
             clients[i].is_active = 0;
             close(clients[i].server_socket);
             clients[i].server_socket = -1;
-            printf("Client %s disconnected.\n", clients[i].ip_address);
             break;
         }
     }
 }
+
+struct ReceivedMessage {
+    int sender_socket;     // The socket of the client who sent the message
+    int bytes_received;    // Number of bytes received, or -1 if there was a disconnection/error
+};
+
+// Function to receive a message and return the result in a struct
+struct ReceivedMessage receive_message(fd_set *master_fds, fd_set *read_fds, int fdmax, int server_socket, char *buffer) {
+    struct ReceivedMessage result;
+    result.sender_socket = -1;    // Default value indicating no sender
+    result.bytes_received = -1;   // Default value indicating error/no data received
+
+    // Loop through all the file descriptors to check which one is ready to send data
+    for (int i = 0; i <= fdmax; i++) {
+        if (i != server_socket && FD_ISSET(i, read_fds)) {
+            // Receive the message from the client
+            int numbytes = recv(i, buffer, BUFFER_SIZE, 0);
+            
+            if (numbytes <= 0) {
+                if (numbytes == 0) {
+                    printf("Client socket %d disconnected.\n", i);
+                } else {
+                    // If recv returns -1, there was an error receiving the message
+                    perror("recv failed");
+                }
+
+                close(i);
+                FD_CLR(i, master_fds);
+                remove_client(i);
+
+                result.sender_socket = i;
+                result.bytes_received = -1; // Disconnected or error
+                return result;  // Return the result
+            } else {
+                buffer[numbytes] = '\0';  // Null-terminate the buffer for safety
+                printf("Received message from client %d: %s\n", i, buffer);
+
+                result.sender_socket = i;
+                result.bytes_received = numbytes;  // Number of bytes received
+                return result;  // Return the result
+            }
+        }
+    }
+
+    return result;
+}
+
+
 
 void broadcast(int sender_server_socket, const char *message) {
     for (int i = 0; i < SOMAXCONN; i++) {
@@ -93,20 +187,16 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    char buffer[buff_size]
-
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;        // Allow IPv4 or IPv6
     hints.ai_socktype = SOCK_STREAM;    // TCP stream sockets
 
-    // Get address info for the provided IP and port
     if (getaddrinfo(Desthost, Destport, &hints, &res) != 0) {
         perror("getaddrinfo() failed");
         return -1;
     }
 
-    // Use the address info returned by getaddrinfo to create the socket
     int server_socket = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (server_socket < 0) {
         perror("socket() failed");
@@ -114,7 +204,6 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Optional: Set socket options
     int opt = 1;
     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR , &opt, sizeof(opt)) < 0) {
         perror("setsockopt() failed");
@@ -141,18 +230,66 @@ int main(int argc, char *argv[]) {
 
 
     fd_set master_fds, read_fds;
-    int fdmax = server_socket;  // Initial max is the server socket file descriptor
 
-    // Initialize the master set
-    FD_ZERO(&master_fds);  // Clear the master and temp sets
+    FD_ZERO(&master_fds);  
     FD_ZERO(&read_fds);
 
-    // Add the server socket to the master set
-    FD_SET(server_socket, &master_fds);  // Add server socket to fd_set
+    FD_SET(server_socket, &master_fds);
 
+    int fdmax = server_socket;
+    int client_socket;
+    int bytes_received;
+
+    char buffer[BUFFER_SIZE];
+    initialize_clients();
+    printf("Server is running...\n");
     while(1)
     {
+        
+        read_fds = master_fds;
 
+        if (select(fdmax + 1, &read_fds, NULL, NULL, NULL) == -1) {
+            perror("select() failed");
+            exit(EXIT_FAILURE);
+        }
+
+        // check if the server socket is set
+        if (FD_ISSET(server_socket, &read_fds)) {
+            printf("New client connection\n");
+            struct sockaddr_storage client_addr;
+            socklen_t addr_size = sizeof(client_addr);
+            if ((client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &addr_size)) < 0) {
+                perror("accept() failed");
+                continue;
+            }
+
+            if (validate_client(client_socket) == -1) {
+                close(client_socket);
+                continue;
+            }
+
+            FD_SET(client_socket, &master_fds);
+
+            if (client_socket > fdmax) {
+                fdmax = client_socket;
+            }
+        }
+
+        else
+        {
+            printf("New message received\n");
+            struct ReceivedMessage received_message = receive_message(&master_fds, &read_fds, fdmax, server_socket, buffer);
+            client_socket = received_message.sender_socket;
+            bytes_received = received_message.bytes_received;
+
+            if (bytes_received == -1) {
+                continue;
+            }
+
+            if (strncmp(buffer, "MSG ", 4) == 0) {
+                broadcast(client_socket, buffer);
+            } 
+        }
     }
 
     close(server_socket);  
