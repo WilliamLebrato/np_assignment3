@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <sys/select.h>
 
-#define BUFFER_SIZE 300
+#define BUFFER_SIZE 600
 
 // ./cchat 13.53.76.30:4711 William
 
