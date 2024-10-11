@@ -281,6 +281,10 @@ int main(int argc, char *argv[]) {
     int bytes_received;
 
     char buffer[BUFFER_SIZE];
+
+    char recv_buffer[BUFFER_SIZE * 2]; 
+    int recv_buffer_len = 0;   
+
     initialize_clients();
     while(1)
     {

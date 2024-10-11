@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <sys/select.h>
 
-#define BUFFER_SIZE 600
+#define BUFFER_SIZE 300
 
 // ./cchat 13.53.76.30:4711 William
 
@@ -154,6 +154,10 @@ int main(int argc, char *argv[]){
     fd_set read_fds;
     int max_fd;
 
+
+    char recv_buffer[BUFFER_SIZE * 2]; // Double size to handle concatenated messages
+    int recv_buffer_len = 0;   
+
     while(1) // Main Loop
     {
         FD_ZERO(&read_fds);                 // Clear the fd_set (initialize it)
@@ -200,54 +204,72 @@ int main(int argc, char *argv[]){
         }
 
         if (FD_ISSET(sockfd, &read_fds)) // RECEIVE DATA
-        {
-            memset(buf, 0, sizeof buf); // Clear the buffer
-            int numbytes_recv;
-
-            if ((numbytes_recv = recv(sockfd, buf, BUFFER_SIZE - 1, 0)) == -1) {
-                perror("recv");
-                fflush(stderr);  // Flush stderr after error print
-                break;
-            }
-
-            if (numbytes_recv == 0) // Server closed connection
             {
-                printf("Server closed the connection.\n");
-                fflush(stdout);  // Flush stdout after print
-                close(sockfd);
-                return -1;
-            }
+                int numbytes_recv;
 
-            if (strncmp(buf, "MSG ", 4) == 0) {
-                char *msg_start = buf + 4; 
+                // Receive data and append to the persistent buffer
+                if ((numbytes_recv = recv(sockfd, recv_buffer + recv_buffer_len, sizeof(recv_buffer) - recv_buffer_len - 1, 0)) <= 0) {
+                    if (numbytes_recv == 0) {
+                        // Server closed connection
+                        printf("Server closed the connection.\n");
+                        fflush(stdout);  // Flush stdout after print
+                    } else {
+                        perror("recv");
+                        fflush(stderr);  // Flush stderr after error print
+                    }
+                    close(sockfd);
+                    return -1;
+                }
 
-                char *nickname_end = strchr(msg_start, ' ');
-                if (nickname_end != NULL) {
-                    *nickname_end = '\0'; 
+                recv_buffer_len += numbytes_recv;
+                recv_buffer[recv_buffer_len] = '\0'; // Null-terminate for string operations
 
-                    char *sender_nick = msg_start;
-                    char *message_text = nickname_end + 1; 
+                // Process complete messages in the buffer
+                char *line_start = recv_buffer;
+                char *newline_pos;
+                while ((newline_pos = strchr(line_start, '\n')) != NULL) {
+                    *newline_pos = '\0'; // Null-terminate the message
 
-                    // Compare sender's nickname with your own
-                    if (strcmp(sender_nick, nickname) != 0) {
-                        printf("%s: %s\n", sender_nick, message_text); 
+                    // Process the message pointed to by line_start
+                    if (strncmp(line_start, "MSG ", 4) == 0) {
+                        char *msg_start = line_start + 4; 
+
+                        char *nickname_end = strchr(msg_start, ' ');
+                        if (nickname_end != NULL) {
+                            *nickname_end = '\0'; 
+
+                            char *sender_nick = msg_start;
+                            char *message_text = nickname_end + 1; 
+
+                            // Compare sender's nickname with your own
+                            if (strcmp(sender_nick, nickname) != 0) {
+                                printf("%s: %s\n", sender_nick, message_text); 
+                                fflush(stdout);  // Flush stdout after print
+                            }
+                            // Else, it's your own message echoed back; do not print
+                        } else {
+                            printf("Malformed message from server: %s\n", line_start);
+                            fflush(stdout);  // Flush stdout after print
+                        }
+                    }
+                    else if (strncmp(line_start, "ERROR", 5) == 0 || strncmp(line_start, "ERR", 3) == 0) {
+                        printf("%s\n", line_start);
                         fflush(stdout);  // Flush stdout after print
                     }
-                    // Else, it's your own message echoed back; do not print
-                } else {
-                    printf("Malformed message from server: %s\n", buf);
-                    fflush(stdout);  // Flush stdout after print
+                    else {
+                        printf("Unknown message from server: %s\n", line_start);
+                        fflush(stdout);  // Flush stdout after print
+                    }
+
+                    // Move to the next line
+                    line_start = newline_pos + 1;
                 }
+
+                // Move any partial message to the beginning of the buffer
+                recv_buffer_len = strlen(line_start);
+                memmove(recv_buffer, line_start, recv_buffer_len);
+                recv_buffer[recv_buffer_len] = '\0'; // Null-terminate the buffer
             }
-            else if (strncmp(buf, "ERROR", 5) == 0 || strncmp(buf, "ERR", 3) == 0) {
-                printf("%s", buf);
-                fflush(stdout);  // Flush stdout after print
-            }
-            else {
-                printf("Unknown message from server: %s\n", buf);
-                fflush(stdout);  // Flush stdout after print
-            }
-        }
     }
     return 0;
 }
