@@ -70,6 +70,14 @@ int main(int argc, char *argv[]){
 
         break;  // Successfully connected
     }
+
+    if (p == NULL) 
+    {
+        fprintf(stderr, "connect: Connection refused\n");
+        fprintf(stderr, "ERROR\n");  // Ensure "ERROR" is printed
+        exit(EXIT_FAILURE);         // Exit with a non-zero status
+    }
+
     freeaddrinfo(servinfo);
 
     if(1)   // PROTOCL VERSION SECTION
