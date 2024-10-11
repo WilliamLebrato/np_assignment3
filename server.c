@@ -56,7 +56,13 @@ int validate_client(int client_socket) {
     char buf[BUFFER_SIZE];
     int numbytes;
 
-    // Step 1: Receive the nickname from the client
+    //send "Hello 1"
+
+    if (send(client_socket, "HELLO 1\n", 8, 0) == -1) {
+        perror("send");
+        return -1;
+    }
+
     memset(buf, 0, sizeof(buf));
     if ((numbytes = recv(client_socket, buf, sizeof(buf) - 1, 0)) <= 0) {
         if (numbytes == 0) {
@@ -83,7 +89,6 @@ int validate_client(int client_socket) {
     }
 
     send(client_socket, "OK\n", 3, 0);
-    printf("Client nickname validated: %s\n", nickname);
 
     add_client(client_socket, nickname);  
     return 0;
@@ -135,7 +140,6 @@ struct ReceivedMessage receive_message(fd_set *master_fds, fd_set *read_fds, int
                 return result;  // Return the result
             } else {
                 buffer[numbytes] = '\0';  // Null-terminate the buffer for safety
-                printf("Received message from client %d: %s\n", i, buffer);
 
                 result.sender_socket = i;
                 result.bytes_received = numbytes;  // Number of bytes received
@@ -242,7 +246,6 @@ int main(int argc, char *argv[]) {
 
     char buffer[BUFFER_SIZE];
     initialize_clients();
-    printf("Server is running...\n");
     while(1)
     {
         
@@ -255,7 +258,6 @@ int main(int argc, char *argv[]) {
 
         // check if the server socket is set
         if (FD_ISSET(server_socket, &read_fds)) {
-            printf("New client connection\n");
             struct sockaddr_storage client_addr;
             socklen_t addr_size = sizeof(client_addr);
             if ((client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &addr_size)) < 0) {
@@ -277,7 +279,6 @@ int main(int argc, char *argv[]) {
 
         else
         {
-            printf("New message received\n");
             struct ReceivedMessage received_message = receive_message(&master_fds, &read_fds, fdmax, server_socket, buffer);
             client_socket = received_message.sender_socket;
             bytes_received = received_message.bytes_received;
