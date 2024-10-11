@@ -1,0 +1,1 @@
+Invalid nickname. Must be up to 12 characters long and can contain A-Z, a-z, 0-9, and _.
